@@ -1,0 +1,11 @@
+{
+	"servers": {
+		"mcp-github-official": {
+			"type": "http",
+			"url": "https://api.githubcopilot.com/mcp/",
+			"gallery": "https://apic-mcp-registry-prod.data.westeurope.azure-apicenter.ms/workspaces/default",
+			"version": "1.0.5"
+		}
+	},
+	"inputs": []
+}
