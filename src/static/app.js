@@ -2,7 +2,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitiesList = document.getElementById("activities-list");
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
+  const loginForm = document.getElementById("teacher-login-form");
+  const logoutButton = document.getElementById("teacher-logout");
+  const signupContainer = document.getElementById("signup-container");
   const messageDiv = document.getElementById("message");
+  let isTeacher = false;
+  let csrfToken = "";
+
+  function updateTeacherControls() {
+    loginForm.classList.toggle("hidden", isTeacher);
+    logoutButton.classList.toggle("hidden", !isTeacher);
+    signupContainer.classList.toggle("hidden", !isTeacher);
+  }
+
+  function showMessage(message, className) {
+    messageDiv.textContent = message;
+    messageDiv.className = className;
+    messageDiv.classList.remove("hidden");
+    setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -12,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.replaceChildren(activitySelect.options[0]);
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -30,7 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${isTeacher ? `<button class="delete-btn" data-activity="${name}" data-email="${email}" aria-label="Unregister ${email}">Remove</button>` : ""}</li>`
                   )
                   .join("")}
               </ul>
@@ -80,35 +99,79 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: { "X-CSRF-Token": csrfToken },
         }
       );
 
       const result = await response.json();
 
       if (response.ok) {
-        messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        showMessage(result.message, "success");
 
         // Refresh activities list to show updated participants
         fetchActivities();
       } else {
-        messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        showMessage(result.detail || "An error occurred", "error");
       }
-
-      messageDiv.classList.remove("hidden");
-
-      // Hide message after 5 seconds
-      setTimeout(() => {
-        messageDiv.classList.add("hidden");
-      }, 5000);
     } catch (error) {
-      messageDiv.textContent = "Failed to unregister. Please try again.";
-      messageDiv.className = "error";
-      messageDiv.classList.remove("hidden");
+      showMessage("Failed to unregister. Please try again.", "error");
       console.error("Error unregistering:", error);
     }
   }
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(loginForm);
+
+    try {
+      const response = await fetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: formData.get("username"),
+          password: formData.get("password"),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        showMessage(result.detail || "Unable to log in", "error");
+        return;
+      }
+
+      isTeacher = true;
+      csrfToken = result.csrf_token;
+      updateTeacherControls();
+      loginForm.reset();
+      showMessage("Logged in as a teacher", "success");
+      fetchActivities();
+    } catch (error) {
+      showMessage("Failed to log in. Please try again.", "error");
+      console.error("Error logging in:", error);
+    }
+  });
+
+  logoutButton.addEventListener("click", async () => {
+    try {
+      const response = await fetch("/auth/logout", {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        showMessage(result.detail || "Unable to log out", "error");
+        return;
+      }
+
+      isTeacher = false;
+      csrfToken = "";
+      updateTeacherControls();
+      showMessage("Logged out", "success");
+      fetchActivities();
+    } catch (error) {
+      showMessage("Failed to log out. Please try again.", "error");
+      console.error("Error logging out:", error);
+    }
+  });
 
   // Handle form submission
   signupForm.addEventListener("submit", async (event) => {
@@ -124,37 +187,39 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: { "X-CSRF-Token": csrfToken },
         }
       );
 
       const result = await response.json();
 
       if (response.ok) {
-        messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        showMessage(result.message, "success");
         signupForm.reset();
 
         // Refresh activities list to show updated participants
         fetchActivities();
       } else {
-        messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        showMessage(result.detail || "An error occurred", "error");
       }
-
-      messageDiv.classList.remove("hidden");
-
-      // Hide message after 5 seconds
-      setTimeout(() => {
-        messageDiv.classList.add("hidden");
-      }, 5000);
     } catch (error) {
-      messageDiv.textContent = "Failed to sign up. Please try again.";
-      messageDiv.className = "error";
-      messageDiv.classList.remove("hidden");
+      showMessage("Failed to sign up. Please try again.", "error");
       console.error("Error signing up:", error);
     }
   });
 
-  // Initialize app
-  fetchActivities();
+  async function initialize() {
+    try {
+      const response = await fetch("/auth/session");
+      const session = await response.json();
+      isTeacher = session.authenticated;
+      csrfToken = session.csrf_token || "";
+    } catch (error) {
+      console.error("Error checking teacher session:", error);
+    }
+    updateTeacherControls();
+    fetchActivities();
+  }
+
+  initialize();
 });
